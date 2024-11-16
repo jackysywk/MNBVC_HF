@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 today_str = datetime.now().strftime('%Y%m%d')
 repo_types = {
     'datasets':{"endpoint":"https://huggingface.co/datasets/"},
-    'models':{"endpoint":"https://huggingface.co/models/"}
+    'models':{"endpoint":"https://huggingface.co/models"}
 }
 base_url = 'https://huggingface.co/api/'
 
@@ -19,7 +19,8 @@ def get_repo_list(repo_types):
         res = requests.get(base_url+repo_type)
         records = res.json()
         for record in records:
-            save_to_jsonl(f'temp/{repo_type}_repo_{today_str}.jsonl',record)
+            record['done'] = False
+            save_to_jsonl(f'temp/{repo_type}_repo_{today_str}',record)
 
 def create_dir(output_dir):
     if not os.path.exists(output_dir):
@@ -60,15 +61,18 @@ def main():
 
     create_dir(output_dir=output_dir)
     create_dir('temp')
+
     existing_repo, path_list = get_existing_local_repo_list()
     if refresh or not existing_repo:
         get_repo_list(repo_types)
         _ ,path_list = get_existing_local_repo_list()
-    
+
     #### handle datasets
     for path_obj in path_list:
+
         path_type = path_obj['type']
-        path = path_obj['path']
+        path = path_obj['path'].replace('.jsonl','')
+
         download_repo_data(path_type, path, output_dir, today_str)
 if __name__== '__main__':
 

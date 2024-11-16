@@ -3,14 +3,44 @@ import re
 import requests
 from bs4 import BeautifulSoup
 import time
+import os
+
+MAX_FILE_SIZE= 500 * 1024 * 1024
+# No need to put .jsonl in this function because it will handle it
 def save_to_jsonl(filename, data):
+    filename = get_next_filename(filename)
     with open(filename, 'a', encoding='utf-8') as f:
         json_line = json.dumps(data, ensure_ascii=False)
         f.write(json_line + '\n')
 
+def replace_jsonl(filename, data):
+    with open(f"{filename}.jsonl", 'w', encoding='utf-8') as f:
+        for entry in data:
+            json.dump(entry, f)
+            f.write('\n')
+
+def get_next_filename(base_filename):
+
+    '''
+    Generate the next filename based on existing files.
+    '''
+    i = 1
+    while True:
+        if i == 1:
+            new_filename = f'{base_filename}.jsonl'
+        else:
+            new_filename = f'{base_filename}_{i}.jsonl'
+        if not os.path.exists(new_filename):
+            return new_filename
+        else:
+            file_size = os.path.getsize(new_filename)
+            if file_size < MAX_FILE_SIZE:
+                return new_filename
+        i += 1
+
 def load_jsonl(file_path):
     data = []
-    with open(file_path, 'r') as f:
+    with open(f"{file_path}.jsonl", 'r') as f:
         for line in f:
             data.append(json.loads(line))
     # return jsonl data
@@ -87,20 +117,31 @@ def _get_comment(discussion_obj_list):
     return discussion_obj_list
 
 def download_repo_data(path_type, file_path, output_dir, today_str):
-    repo_list = load_jsonl(file_path)
-    for repo in repo_list:
-        repo_id = repo['id']
-        res = requests.get(f"https://huggingface.co/datasets/{repo_id}/discussions?status=open")
-        time.sleep(0.5)
-        soup = BeautifulSoup(res.text,'html.parser')
-        discussions = _get_discussion(soup)
-        
-        res = requests.get(f"https://huggingface.co/datasets/{repo_id}/discussions?status=closed")
-        time.sleep(0.5)
-        soup = BeautifulSoup(res.text,'html.parser')
-        discussions += _get_discussion(soup)
-        discussion_obj_list = _get_discussion_href(discussions, repo_id)
-        conversations = _get_comment(discussion_obj_list)
-        print(f"Downloaded {repo_id}. Total length {len(conversations)}")
-        if len(conversations)>0:
-            save_to_jsonl(f"{output_dir}/{path_type}_{today_str}.jsonl",conversations)
+    try:
+        repo_list = load_jsonl(file_path)
+        for i, repo in enumerate(repo_list):
+            if repo['done'] == False:
+                repo_id = repo['id']
+                res = requests.get(f"https://huggingface.co/datasets/{repo_id}/discussions?status=open")
+                time.sleep(0.5)
+                soup = BeautifulSoup(res.text,'html.parser')
+                discussions = _get_discussion(soup)
+                
+                res = requests.get(f"https://huggingface.co/datasets/{repo_id}/discussions?status=closed")
+                time.sleep(0.5)
+                soup = BeautifulSoup(res.text,'html.parser')
+                discussions += _get_discussion(soup)
+                discussion_obj_list = _get_discussion_href(discussions, repo_id)
+                conversations = _get_comment(discussion_obj_list)
+                print(f"Downloaded {i+1}/{len(repo_list)} {repo_id}. Total length {len(conversations)}")
+                if len(conversations)>0:
+                    save_to_jsonl(f"{output_dir}/{path_type}_{today_str}",conversations)
+                repo['done'] = True
+                repo_list[i] = repo
+            else:
+                continue
+    except Exception as e:
+        print(f"An error ocurred: {e}")
+    finally:
+        replace_jsonl(file_path,repo_list)
+
